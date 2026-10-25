@@ -1,0 +1,72 @@
+name: Private commit validation
+run-name: private-ci-${{ inputs.private_sha }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      private_sha:
+        description: Reviewed exact 40-character SHA in the private repository
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: private-ci-${{ inputs.private_sha }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Validate requested commit
+        shell: pwsh
+        env:
+          PRIVATE_SHA: ${{ inputs.private_sha }}
+        run: |
+          if ($env:PRIVATE_SHA -cnotmatch '^[0-9a-f]{40}$') { throw 'Invalid commit identifier.' }
+
+      - name: Checkout public test harness
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Checkout reviewed private commit with repository-only read key
+        uses: actions/checkout@v5
+        with:
+          repository: zichuanzi/yunzhan-workbench-private
+          ref: ${{ inputs.private_sha }}
+          path: private-source
+          ssh-key: ${{ secrets.PRIVATE_REPOSITORY_READ_KEY }}
+          persist-credentials: false
+
+      - name: Verify checkout identity
+        shell: pwsh
+        env:
+          PRIVATE_SHA: ${{ inputs.private_sha }}
+        run: |
+          $actual = (git -C private-source rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $actual -cne $env:PRIVATE_SHA) { throw 'Checkout does not match requested private commit.' }
+          Write-Output "Verified exact private SHA: $actual"
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: Run full private-source validation without publishing logs or artifacts
+        shell: pwsh
+        run: ./scripts/validate-private.ps1 -SourceRoot ./private-source -Phase Primary
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+
+      - name: Validate keyword engine and release guards
+        shell: pwsh
+        run: ./scripts/validate-private.ps1 -SourceRoot ./private-source -Phase Final
