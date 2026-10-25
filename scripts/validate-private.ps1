@@ -19,6 +19,21 @@ function Invoke-QuietStep {
         & $Program @Arguments *> $logPath
         $exit = $LASTEXITCODE
         if ($exit -ne 0) {
+            if ($Name -eq 'Python unit tests') {
+                $text = Get-Content -LiteralPath $logPath -Raw -ErrorAction SilentlyContinue
+                $safeTypes = @('UnicodeEncodeError', 'UnicodeDecodeError', 'ModuleNotFoundError',
+                    'ImportError', 'FileNotFoundError', 'PermissionError', 'AssertionError',
+                    'TimeoutExpired', 'OSError', 'RuntimeError', 'TypeError', 'ValueError')
+                foreach ($type in $safeTypes) {
+                    $count = [regex]::Matches([string]$text, "\b$type\b").Count
+                    if ($count -gt 0) { Write-Output "Python test error class $type count $count" }
+                }
+                if ([string]$text -match 'FAILED \(failures=([0-9]+), errors=([0-9]+)\)') {
+                    Write-Output "Python test summary failures=$($Matches[1]) errors=$($Matches[2])"
+                } elseif ([string]$text -match 'FAILED \(errors=([0-9]+)\)') {
+                    Write-Output "Python test summary errors=$($Matches[1])"
+                }
+            }
             throw "$Name failed with exit code $exit. Review and reproduce locally; private test output is intentionally not public."
         }
         Write-Output "$Name passed"
