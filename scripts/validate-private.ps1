@@ -21,6 +21,10 @@ function Invoke-QuietStep {
         if ($exit -ne 0) {
             if ($Name -eq 'Python unit tests') {
                 $text = Get-Content -LiteralPath $logPath -Raw -ErrorAction SilentlyContinue
+                # Recreate only numeric failure markers. Never emit test names or captured output.
+                foreach ($case in [regex]::Matches([string]$text, '(?m)^CI_PYTHON_CASE_FAILED ([0-9]{1,7})\r?$')) {
+                    Write-Output "Python test case $([int]$case.Groups[1].Value) failed"
+                }
                 $safeTypes = @('UnicodeEncodeError', 'UnicodeDecodeError', 'ModuleNotFoundError',
                     'ImportError', 'FileNotFoundError', 'PermissionError', 'AssertionError',
                     'TimeoutExpired', 'OSError', 'RuntimeError', 'TypeError', 'ValueError')
@@ -52,7 +56,7 @@ if ($Phase -eq 'Primary') {
     Invoke-QuietStep 'Install dependency auditor' $source 'python' @('-m', 'pip', 'install', 'pip-audit==2.10.1')
     Invoke-QuietStep 'Python dependency audit' $source 'python' @('-m', 'pip_audit', '-r', 'yunzhan_workbench/requirements-windows-cp313.lock', '--strict')
     Invoke-QuietStep 'Install Python lock' $source 'python' @('-m', 'pip', 'install', '-r', 'yunzhan_workbench/requirements-windows-cp313.lock')
-    Invoke-QuietStep 'Python unit tests' $app 'python' @('-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_*.py')
+    Invoke-QuietStep 'Python unit tests' $app 'python' @((Join-Path $PSScriptRoot 'run-python-suite.py'))
     Invoke-QuietStep 'Collector tests' $source 'node' @(
         '--test',
         'shared/didi-incentive-dashboard/model.test.mjs',
